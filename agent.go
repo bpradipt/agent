@@ -1032,6 +1032,12 @@ func (s *sandbox) initLogger(ctx context.Context) error {
 		}()
 	}
 
+	file, err := os.OpenFile("/tmp/agent.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return err
+	}
+	agentLog.Logger.Out = file
+
 	return announce()
 }
 
