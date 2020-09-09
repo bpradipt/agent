@@ -370,6 +370,8 @@ func vfioDeviceHandler(ctx context.Context, device pb.Device, spec *pb.Spec, s *
 			}
 		}
 
+		s.vfioDeviceMap[hostBdf] = guestBdf
+
 		fieldLogger.WithField("host-bdf", hostBdf).WithField("guest-bdf", guestBdf).Debug("VFIO: Device complete")
 	}
 
@@ -386,6 +388,21 @@ func vfioDeviceHandler(ctx context.Context, device pb.Device, spec *pb.Spec, s *
 	}
 
 	return nil
+}
+
+func VfioTranslateEnv(s *sandbox, env []string) []string {
+	newEnv := make([]string, 0, len(env))
+
+	for _, e := range env {
+		if strings.HasPrefix(e, "PCIDEVICE_") {
+			for host, guest := range s.vfioDeviceMap {
+				e = strings.ReplaceAll(e, host, guest)
+			}
+		}
+		newEnv = append(newEnv, e)
+	}
+
+	return newEnv
 }
 
 // updateSpecDevice updates a device list in the OCI spec to make it

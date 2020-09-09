@@ -148,6 +148,10 @@ type sandbox struct {
 	storages          map[string]*sandboxStorage
 	stopServer        chan struct{}
 	oomEvents         chan string
+
+	// Mapping from host to guest DDDD:BB:DD.F PCI addresses for
+	// VFIO devices
+	vfioDeviceMap     map[string]string
 }
 
 var agentFields = logrus.Fields{
@@ -1536,6 +1540,7 @@ func realMain() error {
 		storages:       make(map[string]*sandboxStorage),
 		stopServer:     make(chan struct{}),
 		oomEvents:      make(chan string),
+		vfioDeviceMap:  make(map[string]string),
 	}
 
 	rootSpan, rootContext, err = setupTracing(agentName)
