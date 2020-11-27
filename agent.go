@@ -1036,7 +1036,8 @@ func (s *sandbox) initLogger(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	agentLog.Logger.Out = file
+	mw := io.MultiWriter(os.Stdout, file)
+	agentLog.Logger.Out = mw
 
 	return announce()
 }
