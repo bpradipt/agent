@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,6 +18,7 @@ import (
 	"strings"
 	"syscall"
 
+	units "github.com/docker/go-units"
 	pb "github.com/kata-containers/agent/protocols/grpc"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -26,12 +28,14 @@ import (
 )
 
 const (
-	type9pFs       = "9p"
-	typeVirtioFS   = "virtiofs"
-	typeRootfs     = "rootfs"
-	typeTmpFs      = "tmpfs"
-	procMountStats = "/proc/self/mountstats"
-	mountPerm      = os.FileMode(0755)
+	type9pFs             = "9p"
+	typeVirtioFS         = "virtiofs"
+	typeRootfs           = "rootfs"
+	typeTmpFs            = "tmpfs"
+	typeHugeTlbfs        = "hugetlbfs"
+	procMountStats       = "/proc/self/mountstats"
+	mountPerm            = os.FileMode(0755)
+	sysfsHugepagesPrefix = "/sys/kernel/mm/hugepages/"
 )
 
 var flagList = map[string]int{
@@ -111,6 +115,13 @@ func mount(source, destination, fsType string, flags int, options string) error 
 		absSource = source
 	case typeTmpFs:
 		absSource = source
+	case typeHugeTlbfs:
+		absSource = source
+		//Allocate hugepages before mount
+		///sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
+		///sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+		//options eg "pagesize=2MB,size=107374182"
+		allocateHugePages(options)
 	default:
 		absSource, err = filepath.EvalSymlinks(source)
 		if err != nil {
@@ -127,6 +138,29 @@ func mount(source, destination, fsType string, flags int, options string) error 
 		fsType, uintptr(flags), options); err != nil {
 		return grpcStatus.Errorf(codes.Internal, "Could not mount %v to %v: %v",
 			absSource, destination, err)
+	}
+
+	return nil
+}
+
+// Allocate hugepages by writing to sysfs
+func allocateHugePages(options string) error {
+
+	agentLog.WithField("HugePagesOption", options).Info("HugePages option string")
+
+	//options eg "pagesize=2M,size=107374182"
+	opt := strings.Split(options, ",")
+	pageSize, _ := units.RAMInBytes(strings.TrimPrefix(opt[0], "pagesize="))
+	//sysfs entry is always of the form hugepages-${size}kB
+	//Ref: https://www.kernel.org/doc/Documentation/vm/hugetlbpage.txt
+	pageSizeKbStr := strconv.FormatInt((pageSize/1024), 10) + "kB"
+	sysfsHugepagesPath := sysfsHugepagesPrefix + "hugepages-" + pageSizeKbStr + "/" + "nr_hugepages"
+
+	sizeStr := strings.TrimPrefix(opt[1], "size=")
+	size, _ := strconv.ParseInt(sizeStr, 10, 64)
+	numpages := strconv.FormatInt((size / pageSize), 10)
+	if err := ioutil.WriteFile(sysfsHugepagesPath, []byte(numpages), 0644); err != nil {
+		agentLog.WithField("sysfsHugepagesPath", sysfsHugepagesPath).WithError(err).Errorf("Could not allocate hugepages")
 	}
 
 	return nil
